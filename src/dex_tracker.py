@@ -85,6 +85,7 @@ class DexTracker:
                 min_time: int = cfg_dip["min_time_after_grad"]
                 cooldown: int = cfg_dip["cooldown_minutes"]
                 price_change_window: float = cfg_dip.get("price_change_window_seconds", 0)
+                price_change_window_end: float = cfg_dip.get("price_change_window_end_seconds", 0)
                 price_change_min_rate: float = cfg_dip.get("price_change_min_rate", 0)
                 min_liquidity: float = cfg_filter["min_liquidity_usd"]
                 min_mcap: float = cfg_filter["min_market_cap"]
@@ -148,9 +149,11 @@ class DexTracker:
                         tier = self._config.get_tier_for_mcap(mcap)
                         if tier is not None:
                             eff_window = tier.get("price_change_window_seconds", price_change_window)
+                            eff_window_end = tier.get("price_change_window_end_seconds", price_change_window_end)
                             eff_min_rate = tier.get("price_change_min_rate", price_change_min_rate)
                         else:
                             eff_window = price_change_window
+                            eff_window_end = price_change_window_end
                             eff_min_rate = price_change_min_rate
 
                         # 押し目判定
@@ -160,14 +163,16 @@ class DexTracker:
                         if dip is not None and mins_since_grad >= min_time:
                             if dip >= dip_threshold:
                                 # 価格変動率チェック（window > 0 のときのみ）
-                                change_rate = token.price_change_rate(eff_window)
+                                change_rate = token.price_change_rate(eff_window, eff_window_end)
                                 if eff_window > 0 and eff_min_rate > 0:
                                     if change_rate is None or change_rate >= 0 or abs(change_rate) < eff_min_rate:
                                         logger.debug(
-                                            "%s: 価格変動率不足 %.1f%% < %.1f%% (mcap=$%.0f%s)",
+                                            "%s: 価格変動率不足 %.1f%% < %.1f%% (窓=%d〜%d秒前, mcap=$%.0f%s)",
                                             token.symbol,
                                             (change_rate * 100) if change_rate is not None else 0,
                                             eff_min_rate * 100,
+                                            eff_window,
+                                            eff_window_end,
                                             mcap,
                                             " [ティア適用]" if tier is not None else "",
                                         )
@@ -185,9 +190,9 @@ class DexTracker:
                                     token.last_notified = datetime.utcnow()
                                     token.notification_count += 1
                                     logger.info(
-                                        "押し目検知: %s ATH比-%.1f%% / %d秒変動率%.1f%%%s",
+                                        "押し目検知: %s ATH比-%.1f%% / %d〜%d秒前平均比%.1f%%%s",
                                         token.symbol, dip * 100,
-                                        eff_window,
+                                        eff_window, eff_window_end,
                                         (change_rate * 100) if change_rate is not None else 0,
                                         " [ティア適用]" if tier is not None else "",
                                     )

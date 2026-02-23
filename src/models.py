@@ -48,18 +48,19 @@ class GraduatedToken:
         while self.price_history and self.price_history[0][0] < cutoff:
             self.price_history.pop(0)
 
-    def price_change_rate(self, window_seconds: float) -> Optional[float]:
-        """過去 window_seconds 秒間の価格変動率 (正=上昇, 負=下落) を返す。
-        ウィンドウ内に基準価格がない場合は None を返す。"""
-        if not self.price_history or self.current_price is None or window_seconds <= 0:
+    def price_change_rate(self, from_seconds: float, to_seconds: float = 0) -> Optional[float]:
+        """[from_seconds秒前 〜 to_seconds秒前] の平均価格と現在価格の変動率 (正=上昇, 負=下落)。
+        to_seconds=0 のとき現在時刻を終端とする。
+        対象期間内に価格がない場合は None を返す。"""
+        if not self.price_history or self.current_price is None or from_seconds <= 0:
             return None
-        cutoff = datetime.utcnow() - timedelta(seconds=window_seconds)
-        # ウィンドウ内の最古の価格を基準にする
-        base_price: Optional[float] = None
-        for ts, p in self.price_history:
-            if ts >= cutoff:
-                base_price = p
-                break
-        if base_price is None or base_price == 0:
+        now = datetime.utcnow()
+        cutoff_old = now - timedelta(seconds=from_seconds)
+        cutoff_new = now - timedelta(seconds=to_seconds) if to_seconds > 0 else now
+        prices = [p for ts, p in self.price_history if cutoff_old <= ts <= cutoff_new]
+        if not prices:
             return None
-        return (self.current_price - base_price) / base_price
+        avg = sum(prices) / len(prices)
+        if avg == 0:
+            return None
+        return (self.current_price - avg) / avg
