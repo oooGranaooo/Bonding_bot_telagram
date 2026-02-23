@@ -118,8 +118,8 @@ class Config:
                 "📊 <b>時価総額別変動率ティア</b>\n"
                 "\n"
                 "未設定です。\n"
-                "追加: <code>/tier add &lt;min&gt; &lt;max&gt; &lt;秒&gt; &lt;変動率%&gt;</code>\n"
-                "例: <code>/tier add 10000 50000 5 10</code>"
+                "追加: <code>/volatier add &lt;min&gt; &lt;max&gt; &lt;秒&gt; &lt;変動率%&gt;</code>\n"
+                "例: <code>/volatier add 10000 50000 5 10</code>"
             )
         lines = ["📊 <b>時価総額別変動率ティア</b>\n"]
         for i, tier in enumerate(tiers, 1):
@@ -132,13 +132,76 @@ class Config:
                 f"  {i}. ${mcap_min:,.0f}〜{max_str}"
                 f" | {window}秒 | {rate * 100:.1f}%以上"
             )
-        lines.append("\n追加: <code>/tier add &lt;min&gt; &lt;max&gt; &lt;秒&gt; &lt;変動率%&gt;</code>")
-        lines.append("例: <code>/tier add 10000 50000 5 10</code>")
-        lines.append("削除: <code>/tier del &lt;番号&gt;</code>")
+        lines.append("\n追加: <code>/volatier add &lt;min&gt; &lt;max&gt; &lt;秒&gt; &lt;変動率%&gt;</code>")
+        lines.append("例: <code>/volatier add 10000 50000 5 10</code>")
+        lines.append("削除: <code>/volatier del &lt;番号&gt;</code>")
+        return "\n".join(lines)
+
+    def get_threshold_for_ath(self, ath: float) -> float | None:
+        """ATH価格に対応する下落閾値を返す。マッチしなければ None。"""
+        tiers = self._data.get("dip", {}).get("ath_tiers", [])
+        for tier in tiers:
+            ath_min = tier.get("ath_min", 0)
+            ath_max = tier.get("ath_max", float("inf"))
+            if ath_min <= ath < ath_max:
+                return tier.get("threshold")
+        return None
+
+    def add_ath_tier(
+        self, ath_min: float, ath_max: float, threshold: float
+    ) -> tuple[bool, str]:
+        """ATHティアを追加して ath_min 昇順にソートして保存する。"""
+        dip = self._data.setdefault("dip", {})
+        tiers = dip.setdefault("ath_tiers", [])
+        tiers.append({"ath_min": ath_min, "ath_max": ath_max, "threshold": threshold})
+        tiers.sort(key=lambda t: t.get("ath_min", 0))
+        self._save()
+        max_str = "∞" if ath_max == float("inf") else f"${ath_max:g}"
+        return True, (
+            f"✅ ATHティア追加\n"
+            f"  ATH: ${ath_min:g} 〜 {max_str}\n"
+            f"  下落閾値: {threshold * 100:.1f}%"
+        )
+
+    def remove_ath_tier(self, index: int) -> tuple[bool, str]:
+        """1-indexed でATHティアを削除して保存する。"""
+        tiers = self._data.get("dip", {}).get("ath_tiers", [])
+        if not tiers:
+            return False, "⚠️ ATHティアが登録されていません"
+        if index < 1 or index > len(tiers):
+            return False, f"⚠️ インデックスが範囲外: {index} (有効範囲: 1〜{len(tiers)})"
+        tiers.pop(index - 1)
+        self._save()
+        return True, f"✅ {index}番目のATHティアを削除しました"
+
+    def format_ath_tiers(self) -> str:
+        tiers = self._data.get("dip", {}).get("ath_tiers", [])
+        if not tiers:
+            return (
+                "📊 <b>ATH別下落閾値ティア</b>\n"
+                "\n"
+                "未設定です。\n"
+                "追加: <code>/athtier add &lt;min&gt; &lt;max&gt; &lt;閾値%&gt;</code>\n"
+                "例: <code>/athtier add 0 0.001 20</code>"
+            )
+        lines = ["📊 <b>ATH別下落閾値ティア</b>\n"]
+        for i, tier in enumerate(tiers, 1):
+            ath_min = tier.get("ath_min", 0)
+            ath_max = tier.get("ath_max", float("inf"))
+            threshold = tier.get("threshold", 0)
+            max_str = "∞" if ath_max == float("inf") else f"${ath_max:g}"
+            lines.append(
+                f"  {i}. ATH: ${ath_min:g}〜{max_str}"
+                f" | 閾値: {threshold * 100:.1f}%以上"
+            )
+        lines.append("\n追加: <code>/athtier add &lt;min&gt; &lt;max&gt; &lt;閾値%&gt;</code>")
+        lines.append("例: <code>/athtier add 0 0.001 20</code>")
+        lines.append("削除: <code>/athtier del &lt;番号&gt;</code>")
         return "\n".join(lines)
 
     def format_all(self) -> str:
-        lines = ["⚙️ <b>現在の設定</b>"]
+        lines = ["⚙️ <b>現在の設定（グローバル）</b>"]
+        lines.append("<i>※ ティア設定がある場合はそちらが優先されます</i>")
         current_section: str | None = None
         for dot_key, (section, field, _, desc) in EDITABLE_KEYS.items():
             if section != current_section:

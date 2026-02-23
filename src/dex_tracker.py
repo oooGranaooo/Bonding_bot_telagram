@@ -123,6 +123,12 @@ class DexTracker:
                         token.record_price(price)
                         token.update_ath(price)
 
+                        # ATHティアが設定されていれば dip_threshold を上書き
+                        if token.ath is not None:
+                            ath_threshold = self._config.get_threshold_for_ath(token.ath)
+                            if ath_threshold is not None:
+                                dip_threshold = ath_threshold
+
                         # 時価総額ティアが設定されていれば優先、なければグローバル設定を使用
                         tier = self._config.get_tier_for_mcap(mcap)
                         if tier is not None:

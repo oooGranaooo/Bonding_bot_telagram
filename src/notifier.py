@@ -19,9 +19,12 @@ _HELP_TEXT = (
     "/list               — 追跡中のCA一覧を表示\n"
     "/config             — 現在の設定を表示\n"
     "/set &lt;key&gt; &lt;value&gt;  — 設定を変更\n"
-    "/tiers              — 時価総額別変動率ティア一覧\n"
-    "/tier add &lt;min&gt; &lt;max&gt; &lt;秒&gt; &lt;%&gt; — ティア追加\n"
-    "/tier del &lt;番号&gt;    — ティア削除\n"
+    "/volatiers          — 時価総額別変動率ティア一覧\n"
+    "/volatier add &lt;min&gt; &lt;max&gt; &lt;秒&gt; &lt;%&gt; — ティア追加\n"
+    "/volatier del &lt;番号&gt; — ティア削除\n"
+    "/athtiers           — ATH別下落閾値ティア一覧\n"
+    "/athtier add &lt;min&gt; &lt;max&gt; &lt;閾値%&gt; — ATHティア追加\n"
+    "/athtier del &lt;番号&gt; — ATHティア削除\n"
     "/stop <code>&lt;CA&gt;</code>         — 指定CAの追跡を停止\n"
     "<code>&lt;CA&gt;</code> 直接入力         — 同上（/stop 省略可）"
 )
@@ -181,8 +184,8 @@ class Notifier:
                             logger.error("返信送信失敗: %s", e)
                         continue
 
-                    # /tiers コマンド
-                    if text in ("/tiers", f"/tiers@{bot_username}"):
+                    # /volatiers コマンド
+                    if text in ("/volatiers", f"/volatiers@{bot_username}"):
                         reply = self._config.format_tiers()
                         try:
                             await self._bot.send_message(
@@ -194,18 +197,89 @@ class Notifier:
                             logger.error("返信送信失敗: %s", e)
                         continue
 
-                    # /tier add / /tier del コマンド
-                    tier_prefix = f"/tier@{bot_username} "
-                    if text.startswith("/tier ") or text.startswith(tier_prefix):
-                        body = text[len(tier_prefix):] if text.startswith(tier_prefix) else text[6:]
+                    # /athtiers コマンド
+                    if text in ("/athtiers", f"/athtiers@{bot_username}"):
+                        reply = self._config.format_ath_tiers()
+                        try:
+                            await self._bot.send_message(
+                                chat_id=msg.chat.id,
+                                text=reply,
+                                parse_mode=ParseMode.HTML,
+                            )
+                        except Exception as e:
+                            logger.error("返信送信失敗: %s", e)
+                        continue
+
+                    # /athtier add / /athtier del コマンド
+                    athtier_prefix = f"/athtier@{bot_username} "
+                    if text.startswith("/athtier ") or text.startswith(athtier_prefix):
+                        body = text[len(athtier_prefix):] if text.startswith(athtier_prefix) else text[9:]
+                        parts = body.strip().split()
+                        subcommand = parts[0].lower() if parts else ""
+
+                        if subcommand == "add":
+                            if len(parts) != 4:
+                                reply = (
+                                    "⚠️ 使い方: <code>/athtier add &lt;min&gt; &lt;max&gt; &lt;閾値%&gt;</code>\n"
+                                    "例: <code>/athtier add 0 0.001 20</code>\n"
+                                    "  max に <code>inf</code> を指定すると上限なし"
+                                )
+                            else:
+                                try:
+                                    ath_min = float(parts[1])
+                                    ath_max = float("inf") if parts[2].lower() in ("inf", "∞") else float(parts[2])
+                                    threshold = float(parts[3]) / 100
+                                    if ath_min < 0 or (ath_max != float("inf") and ath_max <= ath_min):
+                                        reply = "⚠️ min < max になるように指定してください"
+                                    elif threshold <= 0 or threshold >= 1:
+                                        reply = "⚠️ 閾値は0より大きく100未満の値を指定してください"
+                                    else:
+                                        ok, reply = self._config.add_ath_tier(ath_min, ath_max, threshold)
+                                        if ok:
+                                            logger.info(
+                                                "ATHティア追加: $%g〜 閾値%.1f%%", ath_min, threshold * 100
+                                            )
+                                except ValueError:
+                                    reply = "⚠️ 数値の形式が正しくありません"
+
+                        elif subcommand == "del":
+                            if len(parts) != 2:
+                                reply = "⚠️ 使い方: <code>/athtier del &lt;番号&gt;</code>"
+                            else:
+                                try:
+                                    index = int(parts[1])
+                                    ok, reply = self._config.remove_ath_tier(index)
+                                    if ok:
+                                        logger.info("ATHティア削除: %d番目", index)
+                                except ValueError:
+                                    reply = "⚠️ 番号には整数を指定してください"
+                        else:
+                            reply = (
+                                "⚠️ サブコマンドが不明です。\n"
+                                "<code>/athtier add</code> または <code>/athtier del</code> を使ってください"
+                            )
+                        try:
+                            await self._bot.send_message(
+                                chat_id=msg.chat.id,
+                                text=reply,
+                                parse_mode=ParseMode.HTML,
+                            )
+                        except Exception as e:
+                            logger.error("返信送信失敗: %s", e)
+                        continue
+
+                    # /volatier add / /volatier del コマンド
+                    volatier_prefix = f"/volatier@{bot_username} "
+                    if text.startswith("/volatier ") or text.startswith(volatier_prefix):
+                        body = text[len(volatier_prefix):] if text.startswith(volatier_prefix) else text[10:]
                         parts = body.strip().split()
                         subcommand = parts[0].lower() if parts else ""
 
                         if subcommand == "add":
                             if len(parts) != 5:
                                 reply = (
-                                    "⚠️ 使い方: <code>/tier add &lt;min&gt; &lt;max&gt; &lt;秒&gt; &lt;変動率%&gt;</code>\n"
-                                    "例: <code>/tier add 10000 50000 5 10</code>\n"
+                                    "⚠️ 使い方: <code>/volatier add &lt;min&gt; &lt;max&gt; &lt;秒&gt; &lt;変動率%&gt;</code>\n"
+                                    "例: <code>/volatier add 10000 50000 5 10</code>\n"
                                     "  max に <code>inf</code> を指定すると上限なし"
                                 )
                             else:
@@ -227,7 +301,7 @@ class Notifier:
 
                         elif subcommand == "del":
                             if len(parts) != 2:
-                                reply = "⚠️ 使い方: <code>/tier del &lt;番号&gt;</code>"
+                                reply = "⚠️ 使い方: <code>/volatier del &lt;番号&gt;</code>"
                             else:
                                 try:
                                     index = int(parts[1])
@@ -239,7 +313,7 @@ class Notifier:
                         else:
                             reply = (
                                 "⚠️ サブコマンドが不明です。\n"
-                                "<code>/tier add</code> または <code>/tier del</code> を使ってください"
+                                "<code>/volatier add</code> または <code>/volatier del</code> を使ってください"
                             )
                         try:
                             await self._bot.send_message(
