@@ -7,20 +7,20 @@ import yaml
 
 CONFIG_PATH = Path("config.yaml")
 
-# dot-key → (section, field, cast, description)
-EDITABLE_KEYS: dict[str, tuple[str, str, type, str]] = {
-    "dip.threshold":                    ("dip",      "threshold",                    float, "ATH比下落閾値 (0〜1)"),
-    "dip.min_time_after_grad":          ("dip",      "min_time_after_grad",          float, "卒業後判定開始 (分)"),
-    "dip.cooldown_minutes":             ("dip",      "cooldown_minutes",             int,   "通知クールダウン (分)"),
-    "dip.price_change_window_seconds":  ("dip",      "price_change_window_seconds",  int,   "価格変動率ウィンドウ (秒, 0=無効)"),
-    "dip.price_change_min_rate":        ("dip",      "price_change_min_rate",        float, "価格変動率閾値 (正の値で設定, 例: 0.1=10%。上昇・下落どちらも絶対値で判定)"),
-    "tracking.poll_interval":   ("tracking", "poll_interval",       int,   "価格チェック間隔 (秒)"),
-    "tracking.max_duration":    ("tracking", "max_duration",        int,   "追跡最大時間 (秒)"),
-    "tracking.max_tokens":      ("tracking", "max_tokens",          int,   "同時追跡上限数"),
-    "tracking.exit_mcap_usd":   ("tracking", "exit_mcap_usd",       float, "追跡終了時価総額 (USD)"),
-    "filter.min_liquidity_usd": ("filter",   "min_liquidity_usd",   float, "最低流動性 (USD)"),
-    "filter.min_market_cap":    ("filter",   "min_market_cap",      float, "最低時価総額 (USD)"),
-    "filter.min_age_minutes":   ("filter",   "min_age_minutes",     float, "ローンチ後最低経過時間 (分)"),
+# dot-key → (section, field, cast, description, is_percent)
+EDITABLE_KEYS: dict[str, tuple[str, str, type, str, bool]] = {
+    "dip.threshold":                    ("dip",      "threshold",                    float, "ATH比下落閾値 (%)",                                     True),
+    "dip.min_time_after_grad":          ("dip",      "min_time_after_grad",          float, "卒業後判定開始 (分)",                                   False),
+    "dip.cooldown_minutes":             ("dip",      "cooldown_minutes",             int,   "通知クールダウン (分)",                                 False),
+    "dip.price_change_window_seconds":  ("dip",      "price_change_window_seconds",  int,   "価格変動率ウィンドウ (秒, 0=無効)",                     False),
+    "dip.price_change_min_rate":        ("dip",      "price_change_min_rate",        float, "価格変動率閾値 (%, 上昇・下落どちらも絶対値で判定)",    True),
+    "tracking.poll_interval":   ("tracking", "poll_interval",       int,   "価格チェック間隔 (秒)",       False),
+    "tracking.max_duration":    ("tracking", "max_duration",        int,   "追跡最大時間 (秒)",           False),
+    "tracking.max_tokens":      ("tracking", "max_tokens",          int,   "同時追跡上限数",              False),
+    "tracking.exit_mcap_usd":   ("tracking", "exit_mcap_usd",       float, "追跡終了時価総額 (USD)",      False),
+    "filter.min_liquidity_usd": ("filter",   "min_liquidity_usd",   float, "最低流動性 (USD)",            False),
+    "filter.min_market_cap":    ("filter",   "min_market_cap",      float, "最低時価総額 (USD)",          False),
+    "filter.min_age_minutes":   ("filter",   "min_age_minutes",     float, "ローンチ後最低経過時間 (分)", False),
 }
 
 
@@ -48,7 +48,7 @@ class Config:
             keys_list = "\n".join(f"  <code>{k}</code>" for k in EDITABLE_KEYS)
             return False, f"⚠️ 不明なキー: <code>{dot_key}</code>\n利用可能なキー:\n{keys_list}"
 
-        section, field, cast, _ = EDITABLE_KEYS[dot_key]
+        section, field, cast, _, is_percent = EDITABLE_KEYS[dot_key]
         try:
             value = cast(value_str)
         except (ValueError, TypeError):
@@ -57,9 +57,15 @@ class Config:
                 f"<b>{cast.__name__}</b> 型の値を指定してください"
             )
 
+        if is_percent:
+            value = value / 100
+
         old = self._data.get(section, {}).get(field, "?")
         self._data.setdefault(section, {})[field] = value
         self._save()
+        if is_percent:
+            old_display = f"{old * 100:.4g}%" if isinstance(old, (int, float)) else old
+            return True, f"✅ <code>{dot_key}</code>: <b>{old_display}</b> → <b>{value * 100:.4g}%</b>"
         return True, f"✅ <code>{dot_key}</code>: <b>{old}</b> → <b>{value}</b>"
 
     def _save(self) -> None:
@@ -203,12 +209,16 @@ class Config:
         lines = ["⚙️ <b>現在の設定（グローバル）</b>"]
         lines.append("<i>※ ティア設定がある場合はそちらが優先されます</i>")
         current_section: str | None = None
-        for dot_key, (section, field, _, desc) in EDITABLE_KEYS.items():
+        for dot_key, (section, field, _, desc, is_percent) in EDITABLE_KEYS.items():
             if section != current_section:
                 lines.append(f"\n<b>[{section}]</b>")
                 current_section = section
             value = self._data.get(section, {}).get(field, "?")
-            lines.append(f"  <code>{dot_key}</code> = <b>{value}</b>  <i>{desc}</i>")
+            if is_percent and isinstance(value, (int, float)):
+                display = f"{value * 100:.4g}%"
+            else:
+                display = value
+            lines.append(f"  <code>{dot_key}</code> = <b>{display}</b>  <i>{desc}</i>")
         lines.append("\n変更: /set &lt;key&gt; &lt;value&gt;")
-        lines.append("例: <code>/set dip.threshold 0.25</code>")
+        lines.append("例: <code>/set dip.threshold 25</code>")
         return "\n".join(lines)

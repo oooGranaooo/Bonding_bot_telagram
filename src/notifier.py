@@ -331,7 +331,7 @@ class Notifier:
                         body = text[len(set_prefix):] if text.startswith(set_prefix) else text[5:]
                         parts = body.strip().split(maxsplit=1)
                         if len(parts) != 2:
-                            reply = "⚠️ 使い方: <code>/set &lt;key&gt; &lt;value&gt;</code>\n例: <code>/set dip.threshold 0.25</code>"
+                            reply = "⚠️ 使い方: <code>/set &lt;key&gt; &lt;value&gt;</code>\n例: <code>/set dip.threshold 25</code>"
                         else:
                             dot_key, value_str = parts
                             ok, reply = self._config.set(dot_key, value_str)
