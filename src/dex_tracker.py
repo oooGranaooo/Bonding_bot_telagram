@@ -162,11 +162,11 @@ class DexTracker:
                                 # 価格変動率チェック（window > 0 のときのみ）
                                 change_rate = token.price_change_rate(eff_window)
                                 if eff_window > 0 and eff_min_rate > 0:
-                                    if change_rate is None or abs(change_rate) < eff_min_rate:
+                                    if change_rate is None or change_rate >= 0 or abs(change_rate) < eff_min_rate:
                                         logger.debug(
                                             "%s: 価格変動率不足 %.1f%% < %.1f%% (mcap=$%.0f%s)",
                                             token.symbol,
-                                            (abs(change_rate) * 100) if change_rate is not None else 0,
+                                            (change_rate * 100) if change_rate is not None else 0,
                                             eff_min_rate * 100,
                                             mcap,
                                             " [ティア適用]" if tier is not None else "",
