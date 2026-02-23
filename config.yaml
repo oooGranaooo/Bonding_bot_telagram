@@ -1,0 +1,14 @@
+dip:
+  threshold: 0.30          # ATH比x%下落で通知
+  min_time_after_grad: 0.1   # 卒業後x分以上経過してから判定
+  cooldown_minutes: 3     # 同一トークンへの通知クールダウン(min)
+
+tracking:
+  poll_interval: 1        # 価格チェック間隔（秒）
+  max_duration: 3600       # 追跡最大時間（秒）= 1時間
+  max_tokens: 5            # 同時追跡トークン数の上限
+  exit_mcap_usd: 10000     # 時価総額がこの値を下回ったら追跡終了
+
+filter:
+  min_liquidity_usd: 5000  # 最低流動性フィルター
+  min_market_cap: 10000    # 最低時価総額フィルター
