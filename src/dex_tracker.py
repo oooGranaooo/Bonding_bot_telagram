@@ -7,6 +7,7 @@ from typing import Callable, Coroutine, Any
 
 import aiohttp
 
+from .config import Config
 from .models import GraduatedToken
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ class DexTracker:
     def __init__(
         self,
         queue: asyncio.Queue,
-        config: dict,
+        config: Config,
         on_dip: Callable[[GraduatedToken], Coroutine[Any, Any, None]],
     ):
         self._queue = queue
@@ -28,7 +29,6 @@ class DexTracker:
         self._on_dip = on_dip
         self._semaphore = asyncio.Semaphore(MAX_CONCURRENT)
         self._active_tasks: dict[str, asyncio.Task] = {}
-        self._max_tracks: int = config.get("tracking", {}).get("max_tokens", 5)
 
     def stop_tracking(self, address: str) -> bool:
         """指定アドレスの追跡タスクをキャンセルする。成功時 True を返す。"""
@@ -49,7 +49,7 @@ class DexTracker:
                 logger.info("既に追跡中: %s", token.address)
                 self._queue.task_done()
                 continue
-            if len(self._active_tasks) >= self._max_tracks:
+            if len(self._active_tasks) >= self._config.get("tracking", "max_tokens", 5):
                 logger.info(
                     "追跡上限(%d)に達したためスキップ: %s",
                     self._max_tracks, token.symbol,
@@ -66,9 +66,9 @@ class DexTracker:
             self._queue.task_done()
 
     async def _track(self, token: GraduatedToken) -> None:
-        cfg_dip = self._config["dip"]
-        cfg_tracking = self._config["tracking"]
-        cfg_filter = self._config["filter"]
+        cfg_dip = self._config.data["dip"]
+        cfg_tracking = self._config.data["tracking"]
+        cfg_filter = self._config.data["filter"]
 
         poll_interval: int = cfg_tracking["poll_interval"]
         max_duration: int = cfg_tracking["max_duration"]
@@ -76,6 +76,8 @@ class DexTracker:
         dip_threshold: float = cfg_dip["threshold"]
         min_time: int = cfg_dip["min_time_after_grad"]
         cooldown: int = cfg_dip["cooldown_minutes"]
+        price_change_window: float = cfg_dip.get("price_change_window_seconds", 0)
+        price_change_min_rate: float = cfg_dip.get("price_change_min_rate", 0)
         min_liquidity: float = cfg_filter["min_liquidity_usd"]
         min_mcap: float = cfg_filter["min_market_cap"]
 
@@ -115,6 +117,7 @@ class DexTracker:
                         if token.initial_price is None:
                             token.initial_price = price
 
+                        token.record_price(price)
                         token.update_ath(price)
 
                         # 押し目判定
@@ -123,6 +126,19 @@ class DexTracker:
 
                         if dip is not None and mins_since_grad >= min_time:
                             if dip >= dip_threshold:
+                                # 価格変動率チェック（window > 0 のときのみ）
+                                change_rate = token.price_change_rate(price_change_window)
+                                if price_change_window > 0 and price_change_min_rate > 0:
+                                    if change_rate is None or abs(change_rate) < price_change_min_rate:
+                                        logger.debug(
+                                            "%s: 価格変動率不足 %.1f%% < %.1f%%",
+                                            token.symbol,
+                                            (abs(change_rate) * 100) if change_rate is not None else 0,
+                                            price_change_min_rate * 100,
+                                        )
+                                        await asyncio.sleep(poll_interval)
+                                        continue
+
                                 # クールダウンチェック
                                 in_cooldown = token.last_notified and (
                                     datetime.utcnow() - token.last_notified
@@ -134,7 +150,10 @@ class DexTracker:
                                     token.last_notified = datetime.utcnow()
                                     token.notification_count += 1
                                     logger.info(
-                                        "押し目検知: %s ATH比-%.1f%%", token.symbol, dip * 100
+                                        "押し目検知: %s ATH比-%.1f%% / %d秒変動率%.1f%%",
+                                        token.symbol, dip * 100,
+                                        price_change_window,
+                                        (change_rate * 100) if change_rate is not None else 0,
                                     )
                                     await self._on_dip(token)
                         elif dip is not None:
