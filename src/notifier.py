@@ -12,6 +12,20 @@ from .models import GraduatedToken
 # Solanaアドレス：base58文字 43〜44文字
 _SOLANA_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 
+_HELP_TEXT = (
+    "🤖 <b>コマンド一覧</b>\n"
+    "\n"
+    "/help               — このヘルプを表示\n"
+    "/list               — 追跡中のCA一覧を表示\n"
+    "/config             — 現在の設定を表示\n"
+    "/set &lt;key&gt; &lt;value&gt;  — 設定を変更\n"
+    "/tiers              — 時価総額別変動率ティア一覧\n"
+    "/tier add &lt;min&gt; &lt;max&gt; &lt;秒&gt; &lt;%&gt; — ティア追加\n"
+    "/tier del &lt;番号&gt;    — ティア削除\n"
+    "/stop <code>&lt;CA&gt;</code>         — 指定CAの追跡を停止\n"
+    "<code>&lt;CA&gt;</code> 直接入力         — 同上（/stop 省略可）"
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -107,19 +121,6 @@ class Notifier:
         """
         offset: int | None = None
         bot_username = (await self._bot.get_me()).username
-        _HELP_TEXT = (
-            "🤖 <b>コマンド一覧</b>\n"
-            "\n"
-            "/help               — このヘルプを表示\n"
-            "/list               — 追跡中のCA一覧を表示\n"
-            "/config             — 現在の設定を表示\n"
-            "/set &lt;key&gt; &lt;value&gt;  — 設定を変更\n"
-            "/tiers              — 時価総額別変動率ティア一覧\n"
-            "/tier add &lt;min&gt; &lt;max&gt; &lt;秒&gt; &lt;%&gt; — ティア追加\n"
-            "/tier del &lt;番号&gt;    — ティア削除\n"
-            "/stop <code>&lt;CA&gt;</code>         — 指定CAの追跡を停止\n"
-            "<code>&lt;CA&gt;</code> 直接入力         — 同上（/stop 省略可）"
-        )
         logger.info("Telegramコマンド受信ループ開始")
         while True:
             try:
@@ -296,18 +297,19 @@ class Notifier:
                 await asyncio.sleep(5)
 
     async def send_test_message(self) -> None:
-        text = (
+        startup_text = (
             "✅ <b>卒業ボット起動</b>\n"
             "\n"
             + self._config.format_all()
         )
-        try:
-            await self._bot.send_message(
-                chat_id=self._chat_id,
-                text=text,
-                parse_mode=ParseMode.HTML,
-            )
-            logger.info("起動メッセージ送信完了")
-        except Exception as e:
-            logger.error("起動メッセージ失敗: %s", e)
-            raise
+        for text in (startup_text, _HELP_TEXT):
+            try:
+                await self._bot.send_message(
+                    chat_id=self._chat_id,
+                    text=text,
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception as e:
+                logger.error("起動メッセージ失敗: %s", e)
+                raise
+        logger.info("起動メッセージ送信完了")
