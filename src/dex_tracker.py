@@ -91,7 +91,7 @@ class DexTracker:
 
                 price_data = await self._fetch_price(session, token.address)
                 if price_data is not None:
-                    price, liquidity, mcap = price_data
+                    price, liquidity, mcap, pair_created_at = price_data
 
                     # 時価総額が閾値を下回ったら追跡終了
                     if mcap > 0 and mcap < exit_mcap:
@@ -100,6 +100,21 @@ class DexTracker:
                             token.symbol, mcap, exit_mcap,
                         )
                         break
+
+                    # 初回フェッチ: DexScreener の pairCreatedAt でローンチ経過時間チェック
+                    min_age_minutes: float = cfg_filter.get("min_age_minutes", 0)
+                    if (
+                        token.initial_price is None
+                        and min_age_minutes > 0
+                        and pair_created_at is not None
+                    ):
+                        elapsed_minutes = (datetime.utcnow() - pair_created_at).total_seconds() / 60
+                        if elapsed_minutes < min_age_minutes:
+                            logger.info(
+                                "ローンチから%.1f分未満のためトラッキング終了: %s (%.1f分)",
+                                min_age_minutes, token.symbol, elapsed_minutes,
+                            )
+                            break
 
                     # フィルター
                     if liquidity < min_liquidity:
@@ -177,6 +192,14 @@ class DexTracker:
                                         " [ティア適用]" if tier is not None else "",
                                     )
                                     asyncio.create_task(self._on_dip(token))
+
+                                    max_notifications: int = cfg_tracking.get("max_notifications", 0)
+                                    if max_notifications > 0 and token.notification_count >= max_notifications:
+                                        logger.info(
+                                            "通知上限(%d回)に達したため追跡終了: %s",
+                                            max_notifications, token.symbol,
+                                        )
+                                        return
                         elif dip is not None:
                             logger.debug(
                                 "%s: 卒業後%.1f分 < %.1f分 (待機中)",
@@ -189,7 +212,7 @@ class DexTracker:
 
     async def _fetch_price(
         self, session: aiohttp.ClientSession, address: str
-    ) -> tuple[float, float, float] | None:
+    ) -> tuple[float, float, float, datetime | None] | None:
         url = DEXSCREENER_URL.format(address=address)
         async with self._semaphore:
             try:
@@ -217,8 +240,10 @@ class DexTracker:
             price = float(pair["priceUsd"])
             liquidity = float((pair.get("liquidity") or {}).get("usd") or 0)
             mcap = float(pair.get("marketCap") or pair.get("fdv") or 0)
+            created_ms = pair.get("pairCreatedAt")
+            pair_created_at = datetime.utcfromtimestamp(created_ms / 1000) if created_ms else None
         except (KeyError, TypeError, ValueError) as e:
             logger.warning("パースエラー: %s — %s", address, e)
             return None
 
-        return price, liquidity, mcap
+        return price, liquidity, mcap, pair_created_at
