@@ -4,7 +4,15 @@ dip:
   cooldown_minutes: 3
   price_change_window_seconds: 5
   price_change_min_rate: 0.1
-  mcap_tiers: []
+  mcap_tiers:
+  - mcap_min: 100000.0
+    mcap_max: 200000.0
+    price_change_window_seconds: 60
+    price_change_min_rate: 0.5
+  ath_tiers:
+  - ath_min: 100000.0
+    ath_max: 200000.0
+    threshold: 0.5
 tracking:
   poll_interval: 1
   max_duration: 3600
