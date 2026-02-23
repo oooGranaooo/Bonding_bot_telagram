@@ -176,7 +176,7 @@ class DexTracker:
                                         (change_rate * 100) if change_rate is not None else 0,
                                         " [ティア適用]" if tier is not None else "",
                                     )
-                                    await self._on_dip(token)
+                                    asyncio.create_task(self._on_dip(token))
                         elif dip is not None:
                             logger.debug(
                                 "%s: 卒業後%.1f分 < %.1f分 (待機中)",
