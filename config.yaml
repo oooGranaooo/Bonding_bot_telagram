@@ -2,8 +2,8 @@ dip:
   threshold: 0.3
   min_time_after_grad: 0.1
   cooldown_minutes: 3
-  price_change_window_seconds: 30
-  price_change_min_rate: 0.05
+  price_change_window_seconds: 5
+  price_change_min_rate: -0.1
 tracking:
   poll_interval: 1
   max_duration: 3600

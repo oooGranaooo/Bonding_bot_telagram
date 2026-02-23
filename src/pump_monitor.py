@@ -6,6 +6,7 @@ from datetime import datetime
 import websockets
 from websockets.exceptions import ConnectionClosedError, WebSocketException
 
+from .config import Config
 from .models import GraduatedToken
 
 logger = logging.getLogger(__name__)
@@ -16,8 +17,9 @@ RECONNECT_MAX = 60
 
 
 class PumpMonitor:
-    def __init__(self, queue: asyncio.Queue):
+    def __init__(self, queue: asyncio.Queue, config: Config):
         self._queue = queue
+        self._config = config
 
     async def run(self) -> None:
         backoff = RECONNECT_BASE
@@ -57,6 +59,21 @@ class PumpMonitor:
         if not mint:
             logger.debug("mint なし: %s", data)
             return
+
+        # ローンチから min_age_minutes 未満のトークンはスキップ
+        min_age: float = self._config.get("filter", "min_age_minutes", 3)
+        ts = data.get("timestamp")
+        if ts is not None and min_age > 0:
+            # ミリ秒の場合は秒に変換
+            if ts > 1e12:
+                ts = ts / 1000
+            launch_time = datetime.utcfromtimestamp(ts)
+            elapsed_minutes = (datetime.utcnow() - launch_time).total_seconds() / 60
+            if elapsed_minutes < min_age:
+                logger.debug(
+                    "ローンチから%.1f分未満のためスキップ: %s (%.1f分)", min_age, mint, elapsed_minutes
+                )
+                return
 
         symbol = data.get("symbol", "UNKNOWN")
         name = data.get("name", symbol)

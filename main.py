@@ -3,9 +3,9 @@ import logging
 import os
 import sys
 
-import yaml
 from dotenv import load_dotenv
 
+from src.config import Config
 from src.dex_tracker import DexTracker
 from src.notifier import Notifier
 from src.pump_monitor import PumpMonitor
@@ -20,11 +20,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def load_config(path: str = "config.yaml") -> dict:
-    with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f)
-
-
 async def main() -> None:
     # 環境変数チェック
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -33,16 +28,16 @@ async def main() -> None:
         logger.error(".env に TELEGRAM_BOT_TOKEN と TELEGRAM_CHAT_ID を設定してください")
         sys.exit(1)
 
-    config = load_config()
+    config = Config()
 
-    notifier = Notifier(bot_token=bot_token, chat_id=chat_id)
+    notifier = Notifier(bot_token=bot_token, chat_id=chat_id, config=config)
 
     # 起動テスト通知（--no-test オプションでスキップ）
     if "--no-test" not in sys.argv:
         await notifier.send_test_message()
 
     queue: asyncio.Queue = asyncio.Queue()
-    monitor = PumpMonitor(queue=queue)
+    monitor = PumpMonitor(queue=queue, config=config)
     tracker = DexTracker(queue=queue, config=config, on_dip=notifier.send_dip_alert)
 
     logger.info("卒業ボット起動")

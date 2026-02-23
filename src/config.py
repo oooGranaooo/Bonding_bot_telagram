@@ -13,7 +13,7 @@ EDITABLE_KEYS: dict[str, tuple[str, str, type, str]] = {
     "dip.min_time_after_grad":          ("dip",      "min_time_after_grad",          float, "卒業後判定開始 (分)"),
     "dip.cooldown_minutes":             ("dip",      "cooldown_minutes",             int,   "通知クールダウン (分)"),
     "dip.price_change_window_seconds":  ("dip",      "price_change_window_seconds",  int,   "価格変動率ウィンドウ (秒, 0=無効)"),
-    "dip.price_change_min_rate":        ("dip",      "price_change_min_rate",        float, "価格変動率閾値 (絶対値, 例: 0.05=5%)"),
+    "dip.price_change_min_rate":        ("dip",      "price_change_min_rate",        float, "価格変動率閾値 (正の値で設定, 例: 0.1=10%。上昇・下落どちらも絶対値で判定)"),
     "tracking.poll_interval":   ("tracking", "poll_interval",       int,   "価格チェック間隔 (秒)"),
     "tracking.max_duration":    ("tracking", "max_duration",        int,   "追跡最大時間 (秒)"),
     "tracking.max_tokens":      ("tracking", "max_tokens",          int,   "同時追跡上限数"),
