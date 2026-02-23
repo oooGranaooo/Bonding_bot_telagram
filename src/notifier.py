@@ -50,6 +50,10 @@ class Notifier:
         dex_url = f"https://dexscreener.com/solana/{token.address}"
 
         price_change_window: float = self._config.get("dip", "price_change_window_seconds", 0)
+        if token.market_cap is not None:
+            tier = self._config.get_tier_for_mcap(token.market_cap)
+            if tier is not None:
+                price_change_window = tier.get("price_change_window_seconds", price_change_window)
         change_rate = token.price_change_rate(price_change_window) if price_change_window > 0 else None
         if change_rate is not None:
             sign = "+" if change_rate >= 0 else ""
@@ -110,6 +114,9 @@ class Notifier:
             "/list               — 追跡中のCA一覧を表示\n"
             "/config             — 現在の設定を表示\n"
             "/set &lt;key&gt; &lt;value&gt;  — 設定を変更\n"
+            "/tiers              — 時価総額別変動率ティア一覧\n"
+            "/tier add &lt;min&gt; &lt;max&gt; &lt;秒&gt; &lt;%&gt; — ティア追加\n"
+            "/tier del &lt;番号&gt;    — ティア削除\n"
             "/stop <code>&lt;CA&gt;</code>         — 指定CAの追跡を停止\n"
             "<code>&lt;CA&gt;</code> 直接入力         — 同上（/stop 省略可）"
         )
@@ -163,6 +170,76 @@ class Notifier:
                     # /config コマンド
                     if text in ("/config", f"/config@{bot_username}"):
                         reply = self._config.format_all()
+                        try:
+                            await self._bot.send_message(
+                                chat_id=msg.chat.id,
+                                text=reply,
+                                parse_mode=ParseMode.HTML,
+                            )
+                        except Exception as e:
+                            logger.error("返信送信失敗: %s", e)
+                        continue
+
+                    # /tiers コマンド
+                    if text in ("/tiers", f"/tiers@{bot_username}"):
+                        reply = self._config.format_tiers()
+                        try:
+                            await self._bot.send_message(
+                                chat_id=msg.chat.id,
+                                text=reply,
+                                parse_mode=ParseMode.HTML,
+                            )
+                        except Exception as e:
+                            logger.error("返信送信失敗: %s", e)
+                        continue
+
+                    # /tier add / /tier del コマンド
+                    tier_prefix = f"/tier@{bot_username} "
+                    if text.startswith("/tier ") or text.startswith(tier_prefix):
+                        body = text[len(tier_prefix):] if text.startswith(tier_prefix) else text[6:]
+                        parts = body.strip().split()
+                        subcommand = parts[0].lower() if parts else ""
+
+                        if subcommand == "add":
+                            if len(parts) != 5:
+                                reply = (
+                                    "⚠️ 使い方: <code>/tier add &lt;min&gt; &lt;max&gt; &lt;秒&gt; &lt;変動率%&gt;</code>\n"
+                                    "例: <code>/tier add 10000 50000 5 10</code>\n"
+                                    "  max に <code>inf</code> を指定すると上限なし"
+                                )
+                            else:
+                                try:
+                                    mcap_min = float(parts[1])
+                                    mcap_max = float("inf") if parts[2].lower() in ("inf", "∞") else float(parts[2])
+                                    window_sec = int(parts[3])
+                                    min_rate = float(parts[4]) / 100
+                                    if mcap_min < 0 or (mcap_max != float("inf") and mcap_max <= mcap_min):
+                                        reply = "⚠️ min < max になるように指定してください"
+                                    elif window_sec <= 0 or min_rate <= 0:
+                                        reply = "⚠️ 秒・変動率は正の値を指定してください"
+                                    else:
+                                        ok, reply = self._config.add_mcap_tier(mcap_min, mcap_max, window_sec, min_rate)
+                                        if ok:
+                                            logger.info("ティア追加: $%.0f〜 %.0f%% / %d秒", mcap_min, min_rate * 100, window_sec)
+                                except ValueError:
+                                    reply = "⚠️ 数値の形式が正しくありません"
+
+                        elif subcommand == "del":
+                            if len(parts) != 2:
+                                reply = "⚠️ 使い方: <code>/tier del &lt;番号&gt;</code>"
+                            else:
+                                try:
+                                    index = int(parts[1])
+                                    ok, reply = self._config.remove_mcap_tier(index)
+                                    if ok:
+                                        logger.info("ティア削除: %d番目", index)
+                                except ValueError:
+                                    reply = "⚠️ 番号には整数を指定してください"
+                        else:
+                            reply = (
+                                "⚠️ サブコマンドが不明です。\n"
+                                "<code>/tier add</code> または <code>/tier del</code> を使ってください"
+                            )
                         try:
                             await self._bot.send_message(
                                 chat_id=msg.chat.id,

@@ -3,7 +3,8 @@ dip:
   min_time_after_grad: 0.1
   cooldown_minutes: 3
   price_change_window_seconds: 5
-  price_change_min_rate: -0.1
+  price_change_min_rate: 0.1
+  mcap_tiers: []
 tracking:
   poll_interval: 1
   max_duration: 3600

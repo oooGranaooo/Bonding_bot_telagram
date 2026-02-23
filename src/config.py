@@ -66,6 +66,77 @@ class Config:
         with self._path.open("w", encoding="utf-8") as f:
             yaml.dump(self._data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
+    def get_tier_for_mcap(self, mcap: float) -> dict | None:
+        """時価総額に対応するティアを返す。マッチしなければ None。"""
+        tiers = self._data.get("dip", {}).get("mcap_tiers", [])
+        for tier in tiers:
+            mcap_min = tier.get("mcap_min", 0)
+            mcap_max = tier.get("mcap_max", float("inf"))
+            if mcap_min <= mcap < mcap_max:
+                return tier
+        return None
+
+    def add_mcap_tier(
+        self, mcap_min: float, mcap_max: float, window_sec: int, min_rate: float
+    ) -> tuple[bool, str]:
+        """ティアを追加して mcap_min 昇順にソートして保存する。"""
+        dip = self._data.setdefault("dip", {})
+        tiers = dip.setdefault("mcap_tiers", [])
+        tiers.append(
+            {
+                "mcap_min": mcap_min,
+                "mcap_max": mcap_max,
+                "price_change_window_seconds": window_sec,
+                "price_change_min_rate": min_rate,
+            }
+        )
+        tiers.sort(key=lambda t: t.get("mcap_min", 0))
+        self._save()
+        max_str = "∞" if mcap_max == float("inf") else f"${mcap_max:,.0f}"
+        return True, (
+            f"✅ ティア追加\n"
+            f"  時価総額: ${mcap_min:,.0f} 〜 {max_str}\n"
+            f"  変動率ウィンドウ: {window_sec}秒\n"
+            f"  最低変動率: {min_rate * 100:.1f}%"
+        )
+
+    def remove_mcap_tier(self, index: int) -> tuple[bool, str]:
+        """1-indexed でティアを削除して保存する。"""
+        tiers = self._data.get("dip", {}).get("mcap_tiers", [])
+        if not tiers:
+            return False, "⚠️ ティアが登録されていません"
+        if index < 1 or index > len(tiers):
+            return False, f"⚠️ インデックスが範囲外: {index} (有効範囲: 1〜{len(tiers)})"
+        tiers.pop(index - 1)
+        self._save()
+        return True, f"✅ {index}番目のティアを削除しました"
+
+    def format_tiers(self) -> str:
+        tiers = self._data.get("dip", {}).get("mcap_tiers", [])
+        if not tiers:
+            return (
+                "📊 <b>時価総額別変動率ティア</b>\n"
+                "\n"
+                "未設定です。\n"
+                "追加: <code>/tier add &lt;min&gt; &lt;max&gt; &lt;秒&gt; &lt;変動率%&gt;</code>\n"
+                "例: <code>/tier add 10000 50000 5 10</code>"
+            )
+        lines = ["📊 <b>時価総額別変動率ティア</b>\n"]
+        for i, tier in enumerate(tiers, 1):
+            mcap_min = tier.get("mcap_min", 0)
+            mcap_max = tier.get("mcap_max", float("inf"))
+            window = tier.get("price_change_window_seconds", 0)
+            rate = tier.get("price_change_min_rate", 0)
+            max_str = "∞" if mcap_max == float("inf") else f"${mcap_max:,.0f}"
+            lines.append(
+                f"  {i}. ${mcap_min:,.0f}〜{max_str}"
+                f" | {window}秒 | {rate * 100:.1f}%以上"
+            )
+        lines.append("\n追加: <code>/tier add &lt;min&gt; &lt;max&gt; &lt;秒&gt; &lt;変動率%&gt;</code>")
+        lines.append("例: <code>/tier add 10000 50000 5 10</code>")
+        lines.append("削除: <code>/tier del &lt;番号&gt;</code>")
+        return "\n".join(lines)
+
     def format_all(self) -> str:
         lines = ["⚙️ <b>現在の設定</b>"]
         current_section: str | None = None

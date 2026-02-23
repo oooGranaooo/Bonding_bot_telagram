@@ -66,26 +66,29 @@ class DexTracker:
             self._queue.task_done()
 
     async def _track(self, token: GraduatedToken) -> None:
-        cfg_dip = self._config.data["dip"]
         cfg_tracking = self._config.data["tracking"]
-        cfg_filter = self._config.data["filter"]
-
-        poll_interval: int = cfg_tracking["poll_interval"]
         max_duration: int = cfg_tracking["max_duration"]
-        exit_mcap: float = cfg_tracking["exit_mcap_usd"]
-        dip_threshold: float = cfg_dip["threshold"]
-        min_time: int = cfg_dip["min_time_after_grad"]
-        cooldown: int = cfg_dip["cooldown_minutes"]
-        price_change_window: float = cfg_dip.get("price_change_window_seconds", 0)
-        price_change_min_rate: float = cfg_dip.get("price_change_min_rate", 0)
-        min_liquidity: float = cfg_filter["min_liquidity_usd"]
-        min_mcap: float = cfg_filter["min_market_cap"]
 
         deadline = token.graduation_time + timedelta(seconds=max_duration)
         logger.info("追跡開始: %s (%s)", token.symbol, token.address)
 
         async with aiohttp.ClientSession() as session:
             while datetime.utcnow() < deadline:
+                # ループごとに最新の設定を読み込む（/set で即時反映）
+                cfg_dip = self._config.data["dip"]
+                cfg_tracking = self._config.data["tracking"]
+                cfg_filter = self._config.data["filter"]
+
+                poll_interval: int = cfg_tracking["poll_interval"]
+                exit_mcap: float = cfg_tracking["exit_mcap_usd"]
+                dip_threshold: float = cfg_dip["threshold"]
+                min_time: int = cfg_dip["min_time_after_grad"]
+                cooldown: int = cfg_dip["cooldown_minutes"]
+                price_change_window: float = cfg_dip.get("price_change_window_seconds", 0)
+                price_change_min_rate: float = cfg_dip.get("price_change_min_rate", 0)
+                min_liquidity: float = cfg_filter["min_liquidity_usd"]
+                min_mcap: float = cfg_filter["min_market_cap"]
+
                 price_data = await self._fetch_price(session, token.address)
                 if price_data is not None:
                     price, liquidity, mcap = price_data
@@ -120,6 +123,15 @@ class DexTracker:
                         token.record_price(price)
                         token.update_ath(price)
 
+                        # 時価総額ティアが設定されていれば優先、なければグローバル設定を使用
+                        tier = self._config.get_tier_for_mcap(mcap)
+                        if tier is not None:
+                            eff_window = tier.get("price_change_window_seconds", price_change_window)
+                            eff_min_rate = tier.get("price_change_min_rate", price_change_min_rate)
+                        else:
+                            eff_window = price_change_window
+                            eff_min_rate = price_change_min_rate
+
                         # 押し目判定
                         dip = token.dip_from_ath()
                         mins_since_grad = token.minutes_since_graduation()
@@ -127,14 +139,16 @@ class DexTracker:
                         if dip is not None and mins_since_grad >= min_time:
                             if dip >= dip_threshold:
                                 # 価格変動率チェック（window > 0 のときのみ）
-                                change_rate = token.price_change_rate(price_change_window)
-                                if price_change_window > 0 and price_change_min_rate > 0:
-                                    if change_rate is None or abs(change_rate) < price_change_min_rate:
+                                change_rate = token.price_change_rate(eff_window)
+                                if eff_window > 0 and eff_min_rate > 0:
+                                    if change_rate is None or abs(change_rate) < eff_min_rate:
                                         logger.debug(
-                                            "%s: 価格変動率不足 %.1f%% < %.1f%%",
+                                            "%s: 価格変動率不足 %.1f%% < %.1f%% (mcap=$%.0f%s)",
                                             token.symbol,
                                             (abs(change_rate) * 100) if change_rate is not None else 0,
-                                            price_change_min_rate * 100,
+                                            eff_min_rate * 100,
+                                            mcap,
+                                            " [ティア適用]" if tier is not None else "",
                                         )
                                         await asyncio.sleep(poll_interval)
                                         continue
@@ -150,10 +164,11 @@ class DexTracker:
                                     token.last_notified = datetime.utcnow()
                                     token.notification_count += 1
                                     logger.info(
-                                        "押し目検知: %s ATH比-%.1f%% / %d秒変動率%.1f%%",
+                                        "押し目検知: %s ATH比-%.1f%% / %d秒変動率%.1f%%%s",
                                         token.symbol, dip * 100,
-                                        price_change_window,
+                                        eff_window,
                                         (change_rate * 100) if change_rate is not None else 0,
+                                        " [ティア適用]" if tier is not None else "",
                                     )
                                     await self._on_dip(token)
                         elif dip is not None:
