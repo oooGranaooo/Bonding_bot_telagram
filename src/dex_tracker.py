@@ -34,6 +34,42 @@ class DexTracker:
         self._semaphore = asyncio.Semaphore(MAX_CONCURRENT)
         self._active_tasks: dict[str, asyncio.Task] = {}
 
+    def _effective_poll(
+        self,
+        token: GraduatedToken,
+        fast: float,
+        slow: float,
+        exit_mcap: float,
+        dip_threshold: float,
+    ) -> float:
+        """現在の状態に応じてポーリング間隔を返す。
+        fast: 急変動期・終了基準近接時
+        slow: 安定期
+        """
+        if slow <= 0 or slow <= fast or not token.price_history:
+            return fast
+
+        # Migration直後: slow*3 秒分の履歴がなければ急変動期とみなす
+        oldest_ts = token.price_history[0][0]
+        if (datetime.utcnow() - oldest_ts).total_seconds() < slow * 3:
+            return fast
+
+        # 急変動期: 直近 slow*2 秒間の変動率が 3% 超
+        change = token.price_change_rate(slow * 2)
+        if change is None or abs(change) > 0.03:
+            return fast
+
+        # 追跡終了基準に近い: mcap が exit_mcap の 3倍以内
+        if token.market_cap is not None and exit_mcap > 0 and token.market_cap < exit_mcap * 3:
+            return fast
+
+        # 押し目閾値の 80% 以上: 通知が近い可能性
+        dip = token.dip_from_ath()
+        if dip is not None and dip >= dip_threshold * 0.8:
+            return fast
+
+        return slow
+
     def stop_tracking(self, address: str) -> bool:
         """指定アドレスの追跡タスクをキャンセルする。成功時 True を返す。"""
         task = self._active_tasks.get(address)
@@ -85,7 +121,8 @@ class DexTracker:
                 cfg_tracking = self._config.data["tracking"]
                 cfg_filter = self._config.data["filter"]
 
-                poll_interval: int = cfg_tracking["poll_interval"]
+                poll_interval: float = cfg_tracking["poll_interval"]
+                poll_interval_slow: float = cfg_tracking.get("poll_interval_slow", 0)
                 exit_mcap: float = cfg_tracking["exit_mcap_usd"]
                 dip_threshold: float = cfg_dip["threshold"]
                 min_time: int = cfg_dip["min_time_after_grad"]
@@ -217,7 +254,10 @@ class DexTracker:
                                 token.symbol, mins_since_grad, min_time,
                             )
 
-                await asyncio.sleep(poll_interval)
+                eff_poll = self._effective_poll(
+                    token, poll_interval, poll_interval_slow, exit_mcap, dip_threshold
+                )
+                await asyncio.sleep(eff_poll)
 
         logger.info("追跡終了: %s (%s)", token.symbol, token.address)
 

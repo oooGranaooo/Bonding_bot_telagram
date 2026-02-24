@@ -16,6 +16,7 @@ dip:
     threshold: 0.5
 tracking:
   poll_interval: 1
+  poll_interval_slow: 3
   max_duration: 1800
   max_tokens: 10
   exit_mcap_usd: 5000.0
