@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 
 import aiohttp
 
 logger = logging.getLogger(__name__)
 
-SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
+SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
 
 
 async def _rpc(
