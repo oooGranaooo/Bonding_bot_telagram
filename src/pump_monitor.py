@@ -59,7 +59,7 @@ class PumpMonitor:
         if not mint:
             logger.debug("mint なし: %s", data)
             return
-        logger.debug("migrationイベント raw keys: %s", list(data.keys()))
+        logger.info("migrationイベント raw keys: %s", list(data.keys()))
 
         # ローンチから min_age_minutes 未満のトークンはスキップ
         min_age: float = self._config.get("filter", "min_age_minutes", 3)
