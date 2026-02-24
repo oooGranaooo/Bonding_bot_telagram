@@ -272,7 +272,7 @@ class DexTracker:
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status == 429:
                         retry_wait = int(resp.headers.get("Retry-After", 5))
-                        logger.debug("DexScreener レート制限 — %d秒後リトライ: %s", retry_wait, address)
+                        logger.warning("DexScreener レート制限 — %d秒後リトライ: %s", retry_wait, address)
                     elif resp.status != 200:
                         logger.warning("DexScreener HTTP %d: %s", resp.status, address)
                     else:
