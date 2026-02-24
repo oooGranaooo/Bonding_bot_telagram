@@ -7,43 +7,6 @@ import yaml
 
 CONFIG_PATH = Path("config.yaml")
 
-# dot-key → 表示用短縮ラベル
-_SHORT_LABELS: dict[str, str] = {
-    "dip.threshold":                        "threshold",
-    "dip.min_time_after_grad":              "min_time",
-    "dip.cooldown_minutes":                 "cooldown",
-    "dip.price_change_window_seconds":      "window_x",
-    "dip.price_change_window_end_seconds":  "window_y",
-    "dip.price_change_min_rate":            "min_rate",
-    "tracking.poll_interval":               "interval",
-    "tracking.max_duration":                "duration",
-    "tracking.max_tokens":                  "tokens",
-    "tracking.exit_mcap_usd":              "exit_mcap",
-    "tracking.max_notifications":          "notif_max",
-    "filter.min_liquidity_usd":            "liquidity",
-    "filter.min_market_cap":               "mcap_min",
-    "filter.min_age_minutes":              "age_min",
-}
-
-# dot-key → 値に付与する単位文字列
-_UNITS: dict[str, str] = {
-    "dip.min_time_after_grad":              "min",
-    "dip.cooldown_minutes":                 "min",
-    "dip.price_change_window_seconds":      "s",
-    "dip.price_change_window_end_seconds":  "s",
-    "tracking.poll_interval":               "s",
-    "tracking.max_duration":                "s",
-    "tracking.max_notifications":          "回",
-    "filter.min_age_minutes":              "min",
-}
-
-# USD 建ての項目 ($ プレフィックスを付ける)
-_USD_KEYS = {
-    "tracking.exit_mcap_usd",
-    "filter.min_liquidity_usd",
-    "filter.min_market_cap",
-}
-
 # dot-key → (section, field, cast, description, is_percent)
 EDITABLE_KEYS: dict[str, tuple[str, str, type, str, bool]] = {
     "dip.threshold":                    ("dip",      "threshold",                    float, "ATH比下落閾値 (%)",                                     True),
@@ -245,27 +208,19 @@ class Config:
         return "\n".join(lines)
 
     def format_all(self) -> str:
-        lines = ["⚙️ <b>現在の設定</b>"]
+        lines = ["⚙️ <b>現在の設定（グローバル）</b>"]
         lines.append("<i>※ ティア設定がある場合はそちらが優先されます</i>")
-
-        sections: dict[str, list[str]] = {}
-        for dot_key, (section, field, _, _desc, is_percent) in EDITABLE_KEYS.items():
+        current_section: str | None = None
+        for dot_key, (section, field, _, desc, is_percent) in EDITABLE_KEYS.items():
+            if section != current_section:
+                lines.append(f"\n<b>[{section}]</b>")
+                current_section = section
             value = self._data.get(section, {}).get(field, "?")
             if is_percent and isinstance(value, (int, float)):
                 display = f"{value * 100:.4g}%"
-            elif dot_key in _USD_KEYS and isinstance(value, (int, float)):
-                display = f"${value:,.0f}"
             else:
-                unit = _UNITS.get(dot_key, "")
-                display = f"{value} {unit}".strip() if unit else str(value)
-
-            label = _SHORT_LABELS.get(dot_key, field)
-            sections.setdefault(section, []).append(f"{label:<12}{display}")
-
-        for section, rows in sections.items():
-            lines.append(f"\n<b>[{section}]</b>")
-            lines.append("<pre>" + "\n".join(rows) + "</pre>")
-
-        lines.append("変更: /set &lt;key&gt; &lt;value&gt;")
+                display = value
+            lines.append(f"  <code>{dot_key}</code> = <b>{display}</b>  <i>{desc}</i>")
+        lines.append("\n変更: /set &lt;key&gt; &lt;value&gt;")
         lines.append("例: <code>/set dip.threshold 25</code>")
         return "\n".join(lines)
