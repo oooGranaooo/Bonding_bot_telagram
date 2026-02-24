@@ -58,6 +58,30 @@ class Notifier:
         self._chat_id = chat_id
         self._config = config
 
+    async def send_tracking_start(self, token: GraduatedToken) -> None:
+        dex_url = f"https://dexscreener.com/solana/{token.address}"
+        text = (
+            "👀 <b>追跡開始</b>\n"
+            "\n"
+            f"🪙 <b>{token.symbol}</b>  {token.name}\n"
+            f"📍 <code>{_short_addr(token.address)}</code>\n"
+            f"\n"
+            f'🔗 <a href="{dex_url}">DexScreener</a>'
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📋 CAをコピー", copy_text=CopyTextButton(text=token.address))]
+        ])
+        try:
+            await self._bot.send_message(
+                chat_id=self._chat_id,
+                text=text,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+                reply_markup=keyboard,
+            )
+        except Exception as e:
+            logger.error("追跡開始通知失敗: %s — %s", token.symbol, e)
+
     async def send_dip_alert(self, token: GraduatedToken) -> None:
         dip = token.dip_from_ath()
         if dip is None:

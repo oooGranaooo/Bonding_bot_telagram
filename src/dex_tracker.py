@@ -23,10 +23,12 @@ class DexTracker:
         queue: asyncio.Queue,
         config: Config,
         on_dip: Callable[[GraduatedToken], Coroutine[Any, Any, None]],
+        on_start: Callable[[GraduatedToken], Coroutine[Any, Any, None]] | None = None,
     ):
         self._queue = queue
         self._config = config
         self._on_dip = on_dip
+        self._on_start = on_start
         self._semaphore = asyncio.Semaphore(MAX_CONCURRENT)
         self._active_tasks: dict[str, asyncio.Task] = {}
 
@@ -56,6 +58,8 @@ class DexTracker:
                 )
                 self._queue.task_done()
                 continue
+            if self._on_start:
+                asyncio.create_task(self._on_start(token))
             task = asyncio.create_task(
                 self._track(token), name=f"track-{token.address[:8]}"
             )

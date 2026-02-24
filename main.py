@@ -38,7 +38,7 @@ async def main() -> None:
 
     queue: asyncio.Queue = asyncio.Queue()
     monitor = PumpMonitor(queue=queue, config=config)
-    tracker = DexTracker(queue=queue, config=config, on_dip=notifier.send_dip_alert)
+    tracker = DexTracker(queue=queue, config=config, on_dip=notifier.send_dip_alert, on_start=notifier.send_tracking_start)
 
     logger.info("卒業ボット起動")
     await asyncio.gather(
