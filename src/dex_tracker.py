@@ -225,16 +225,27 @@ class DexTracker:
         self, session: aiohttp.ClientSession, address: str
     ) -> tuple[float, float, float, datetime | None] | None:
         url = DEXSCREENER_URL.format(address=address)
+        data = None
+        retry_wait = 0
         async with self._semaphore:
             try:
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    if resp.status != 200:
+                    if resp.status == 429:
+                        retry_wait = int(resp.headers.get("Retry-After", 5))
+                        logger.debug("DexScreener レート制限 — %d秒後リトライ: %s", retry_wait, address)
+                    elif resp.status != 200:
                         logger.warning("DexScreener HTTP %d: %s", resp.status, address)
-                        return None
-                    data = await resp.json()
+                    else:
+                        data = await resp.json()
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 logger.warning("DexScreener取得失敗: %s — %s", address, e)
                 return None
+
+        if retry_wait > 0:
+            await asyncio.sleep(retry_wait)
+            return None
+        if data is None:
+            return None
 
         pairs = data if isinstance(data, list) else data.get("pairs", [])
         if not pairs:
