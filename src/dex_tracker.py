@@ -111,16 +111,23 @@ class DexTracker:
         if min_age_minutes > 0:
             async with aiohttp.ClientSession() as session:
                 price_data = await self._fetch_price(session, token.address)
-            if price_data is not None:
+            if price_data is None:
+                logger.debug("年齢チェック: DexScreener取得失敗のためスキップ判定省略: %s", token.symbol)
+            else:
                 _, _, _, pair_created_at = price_data
-                if pair_created_at is not None:
+                if pair_created_at is None:
+                    logger.debug("年齢チェック: pairCreatedAt 不明のためスキップ判定省略: %s", token.symbol)
+                else:
                     elapsed_minutes = (datetime.utcnow() - pair_created_at).total_seconds() / 60
                     if elapsed_minutes < min_age_minutes:
                         logger.info(
-                            "ローンチから%.1f分未満のため追跡スキップ: %s (%.1f分)",
+                            "ローンチから%.1f分未満のため追跡スキップ: %s (%.1f分経過)",
                             min_age_minutes, token.symbol, elapsed_minutes,
                         )
                         return
+                    logger.debug(
+                        "年齢チェック通過: %s (%.1f分経過)", token.symbol, elapsed_minutes
+                    )
 
         if self._on_start:
             await self._on_start(token)
