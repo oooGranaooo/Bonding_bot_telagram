@@ -9,6 +9,7 @@ import aiohttp
 
 from .config import Config
 from .models import GraduatedToken
+from .solana_rpc import get_holder_rates
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,28 @@ class DexTracker:
         logger.info("追跡開始: %s (%s)", token.symbol, token.address)
 
         async with aiohttp.ClientSession() as session:
+            # ホルダーフィルターチェック（1回だけ）
+            cfg_filter = self._config.data["filter"]
+            max_dev_rate: float = cfg_filter.get("max_dev_holding_rate", 0)
+            max_top_rate: float = cfg_filter.get("max_top_holding_rate", 0)
+            top_n: int = cfg_filter.get("top_holder_count", 10)
+
+            if max_dev_rate > 0 or max_top_rate > 0:
+                dev_rate, top_rate = await get_holder_rates(
+                    session, token.address, token.dev_wallet, top_n
+                )
+                if max_dev_rate > 0 and dev_rate is not None and dev_rate > max_dev_rate:
+                    logger.info(
+                        "dev保有率が高すぎるため追跡終了: %s (%.1f%% > %.1f%%)",
+                        token.symbol, dev_rate * 100, max_dev_rate * 100,
+                    )
+                    return
+                if max_top_rate > 0 and top_rate is not None and top_rate > max_top_rate:
+                    logger.info(
+                        "上位%dホルダー集中率が高すぎるため追跡終了: %s (%.1f%% > %.1f%%)",
+                        top_n, token.symbol, top_rate * 100, max_top_rate * 100,
+                    )
+                    return
             while datetime.utcnow() < deadline:
                 # ループごとに最新の設定を読み込む（/set で即時反映）
                 cfg_dip = self._config.data["dip"]

@@ -21,9 +21,12 @@ EDITABLE_KEYS: dict[str, tuple[str, str, type, str, bool]] = {
     "tracking.max_tokens":      ("tracking", "max_tokens",          int,   "同時追跡上限数",              False),
     "tracking.exit_mcap_usd":       ("tracking", "exit_mcap_usd",       float, "追跡終了時価総額 (USD)",      False),
     "tracking.max_notifications":   ("tracking", "max_notifications",   int,   "通知上限回数 (0=無制限)",     False),
-    "filter.min_liquidity_usd": ("filter",   "min_liquidity_usd",   float, "最低流動性 (USD)",            False),
-    "filter.min_market_cap":    ("filter",   "min_market_cap",      float, "最低時価総額 (USD)",          False),
-    "filter.min_age_minutes":   ("filter",   "min_age_minutes",     float, "ローンチ後最低経過時間 (分)", False),
+    "filter.min_liquidity_usd":      ("filter", "min_liquidity_usd",      float, "最低流動性 (USD)",                       False),
+    "filter.min_market_cap":         ("filter", "min_market_cap",         float, "最低時価総額 (USD)",                     False),
+    "filter.min_age_minutes":        ("filter", "min_age_minutes",        float, "ローンチ後最低経過時間 (分)",             False),
+    "filter.max_dev_holding_rate":   ("filter", "max_dev_holding_rate",   float, "dev最大保有率 (%, 0=無効)",               True),
+    "filter.max_top_holding_rate":   ("filter", "max_top_holding_rate",   float, "上位ホルダー最大集中率 (%, 0=無効)",     True),
+    "filter.top_holder_count":       ("filter", "top_holder_count",       int,   "集中率チェック対象ホルダー数",           False),
 }
 
 

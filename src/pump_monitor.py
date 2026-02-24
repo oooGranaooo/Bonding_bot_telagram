@@ -77,12 +77,14 @@ class PumpMonitor:
 
         symbol = data.get("symbol", "UNKNOWN")
         name = data.get("name", symbol)
+        dev_wallet = data.get("traderPublicKey")
 
         token = GraduatedToken(
             address=mint,
             symbol=symbol,
             name=name,
             graduation_time=datetime.utcnow(),
+            dev_wallet=dev_wallet,
         )
         logger.info("卒業検知: %s (%s) — %s", symbol, name, mint)
         await self._queue.put(token)

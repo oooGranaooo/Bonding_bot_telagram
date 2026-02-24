@@ -13,6 +13,7 @@ class GraduatedToken:
     name: str
     graduation_time: datetime
 
+    dev_wallet: Optional[str] = None
     initial_price: Optional[float] = None
     ath: Optional[float] = None
     ath_time: Optional[datetime] = None
