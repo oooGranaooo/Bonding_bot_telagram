@@ -1,0 +1,175 @@
+================================================================
+  卒業ボット 説明書
+================================================================
+
+■ 概要
+----------------------------------------------------------------
+pump.fun で卒業（Raydium / PumpSwap への移行）したトークンを
+自動検知し、ATH から一定割合下落した「押し目」をTelegramに
+通知するボットです。
+
+
+■ 動作の流れ
+----------------------------------------------------------------
+1. pumpportal.fun の WebSocket で卒業イベントを受信
+2. CAが "pump" で終わるトークンのみを対象にする
+3. DexScreener でペア情報を取得し、ローンチ経過時間を確認
+   → min_age_minutes 未満なら追跡をスキップ
+4. 追跡開始通知をTelegramに送信
+5. DexScreener を定期ポーリングして価格・流動性・時価総額を取得
+6. 以下の条件を満たしたとき「押し目アラート」を送信
+   - 流動性 ≥ min_liquidity_usd
+   - 時価総額 ≥ min_market_cap
+   - 卒業から min_time_after_grad 分以上経過
+   - ATH比の下落率 ≥ threshold（押し目閾値）
+   - 価格変動率フィルター通過（設定時のみ）
+   - クールダウン期間外
+7. 以下のいずれかで追跡を終了
+   - 追跡時間が max_duration 秒を超えた
+   - 時価総額が exit_mcap_usd を下回った
+   - 通知回数が max_notifications に達した（0=無制限）
+
+
+■ セットアップ
+----------------------------------------------------------------
+1. .env ファイルを作成し、以下を設定する
+
+   TELEGRAM_BOT_TOKEN=<BotFatherで取得したトークン>
+   TELEGRAM_CHAT_ID=<通知先のチャットID>
+
+2. 起動コマンド
+
+   python main.py
+
+   起動時にTelegramへテストメッセージと設定一覧を送信します。
+   テストメッセージを省略する場合:
+
+   python main.py --no-test
+
+
+■ 設定ファイル（config.yaml）
+----------------------------------------------------------------
+設定はすべて config.yaml で管理されます。
+Telegram の /set コマンドで実行中に変更することも可能です。
+
+【dip セクション】 — 押し目検知の設定
+  threshold               : ATH比の下落閾値（例: 0.3 = 30%下落）
+  min_time_after_grad     : 卒業後、押し目判定を開始するまでの時間（分）
+  cooldown_minutes        : 同一トークンへの通知間隔（分）
+  price_change_window_seconds     : 価格変動率の比較ウィンドウ開始（x秒前）
+  price_change_window_end_seconds : 価格変動率の比較ウィンドウ終端（y秒前、0=現在）
+  price_change_min_rate   : 通知に必要な最低下落変動率（例: 0.05 = 5%）
+                            ※ x〜y秒前の平均価格と現在価格を比較します
+                            ※ 0 に設定すると変動率チェックを無効化します
+
+【tracking セクション】 — 追跡の設定
+  poll_interval           : 急変動期のポーリング間隔（秒）
+  poll_interval_slow      : 安定期のポーリング間隔（秒、0=常に高速）
+  max_duration            : 追跡最大時間（秒）
+  max_tokens              : 同時追跡できるトークンの上限数
+  exit_mcap_usd           : この時価総額（USD）を下回ったら追跡終了
+  max_notifications       : 1トークンあたりの通知上限回数（0=無制限）
+
+【filter セクション】 — フィルターの設定
+  min_liquidity_usd       : 最低流動性（USD）
+  min_market_cap          : 最低時価総額（USD）
+  min_age_minutes         : ローンチから追跡開始までの最低経過時間（分）
+
+【動的ポーリングの仕組み】
+  以下のいずれかの条件を満たす場合は poll_interval（高速）を使用します。
+  - Migration 直後で価格履歴が少ない
+  - 直近の価格変動率が 3% 超
+  - 時価総額が exit_mcap_usd の 3倍以内
+  - ATH比下落率が閾値の 80% 以上
+  上記に当てはまらない安定期は poll_interval_slow（低速）を使用します。
+
+
+■ 時価総額別変動率ティア（mcap_tiers）
+----------------------------------------------------------------
+時価総額の範囲ごとに、価格変動率フィルターを別途設定できます。
+ティアが設定されている場合、グローバル設定より優先されます。
+
+設定例（config.yaml）:
+  dip:
+    mcap_tiers:
+      - mcap_min: 100000
+        mcap_max: 500000
+        price_change_window_seconds: 10
+        price_change_window_end_seconds: 4
+        price_change_min_rate: 0.05
+
+Telegram コマンド:
+  /volatiers                              — ティア一覧を表示
+  /volatier add <min> <max> <x秒> <変動率%>           — ティア追加（y=現在）
+  /volatier add <min> <max> <x秒> <y秒> <変動率%>     — ティア追加（y秒前まで）
+  /volatier del <番号>                    — ティアを削除
+
+
+■ ATH別下落閾値ティア（ath_tiers）
+----------------------------------------------------------------
+ATH（USD）の範囲ごとに、押し目閾値を別途設定できます。
+ティアが設定されている場合、グローバルの threshold より優先されます。
+
+設定例（config.yaml）:
+  dip:
+    ath_tiers:
+      - ath_min: 0.001
+        ath_max: 0.01
+        threshold: 0.4
+
+Telegram コマンド:
+  /athtiers                               — ティア一覧を表示
+  /athtier add <min> <max> <閾値%>        — ティア追加
+  /athtier del <番号>                     — ティアを削除
+
+
+■ Telegram コマンド一覧
+----------------------------------------------------------------
+/help                     — コマンド一覧を表示
+/list                     — 追跡中のCA一覧を表示
+/config                   — 現在の設定を表示
+/set <key> <value>        — 設定を変更（即時反映）
+  例: /set dip.threshold 25
+  例: /set tracking.poll_interval 2
+/volatiers                — 時価総額別変動率ティア一覧
+/volatier add ...         — ティアを追加
+/volatier del <番号>      — ティアを削除
+/athtiers                 — ATH別下落閾値ティア一覧
+/athtier add ...          — ATHティアを追加
+/athtier del <番号>       — ATHティアを削除
+/stop <CA>                — 指定CAの追跡を停止
+<CA> 直接入力             — /stop と同じ（コマンド省略可）
+
+
+■ 通知の種類
+----------------------------------------------------------------
+【追跡開始通知】
+  新しいトークンの追跡を開始したときに送信されます。
+  トークン名・シンボル・CA・DexScreenerリンクを表示します。
+
+【押し目アラート】
+  押し目条件を満たしたときに送信されます。
+  ATH比下落率・現在価格・ATH・流動性・卒業からの経過時間・
+  DexScreenerリンクを表示します。
+
+
+■ 対象トークンの条件
+----------------------------------------------------------------
+- pumpportal.fun の Migration イベントで検知できるトークン
+- CAが "pump" で終わるトークン（PumpSwap AMM ミント）
+- DexScreener に Raydium または PumpSwap のペアが存在するトークン
+
+
+■ ファイル構成
+----------------------------------------------------------------
+main.py           — エントリーポイント
+config.yaml       — 設定ファイル
+.env              — 環境変数（TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID）
+src/
+  pump_monitor.py — pumpportal.fun WebSocket 監視
+  dex_tracker.py  — DexScreener ポーリング・押し目判定
+  notifier.py     — Telegram 通知・コマンド受信
+  config.py       — 設定管理
+  models.py       — データモデル（GraduatedToken）
+
+================================================================
