@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 DEXSCREENER_URL = "https://api.dexscreener.com/token-pairs/v1/solana/{address}"
 # 300 req/min = 5 req/sec → Semaphore で同時リクエスト数を制限
 MAX_CONCURRENT = 5
+# pump.fun 卒業銘柄が存在する DEX（Raydium 移行 + PumpSwap AMM）
+_PUMPFUN_DEX_IDS = frozenset({"raydium", "pumpswap"})
 
 
 class DexTracker:
@@ -237,6 +239,12 @@ class DexTracker:
         pairs = data if isinstance(data, list) else data.get("pairs", [])
         if not pairs:
             logger.debug("ペアなし: %s", address)
+            return None
+
+        # pump.fun 関連 DEX のペアのみ対象
+        pairs = [p for p in pairs if p.get("dexId") in _PUMPFUN_DEX_IDS]
+        if not pairs:
+            logger.debug("pump.fun ペアなし: %s", address)
             return None
 
         # 流動性が最大のペアを採用
