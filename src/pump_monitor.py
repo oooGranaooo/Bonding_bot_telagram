@@ -59,6 +59,9 @@ class PumpMonitor:
         if not mint:
             logger.debug("mint なし: %s", data)
             return
+        if not mint.endswith("pump"):
+            logger.debug("pump以外のCAのためスキップ: %s", mint)
+            return
 
         symbol = data.get("symbol", "UNKNOWN")
         name = data.get("name", symbol)
