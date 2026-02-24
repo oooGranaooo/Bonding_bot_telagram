@@ -118,6 +118,14 @@ class DexTracker:
                 dev_rate, top_rate = await get_holder_rates(
                     check_session, token.address, token.dev_wallet, top_n
                 )
+            logger.info(
+                "ホルダーチェック: %s | dev_wallet=%s | dev=%.1f%% | top%d=%.1f%%",
+                token.symbol,
+                token.dev_wallet or "N/A",
+                (dev_rate * 100) if dev_rate is not None else -1,
+                top_n,
+                (top_rate * 100) if top_rate is not None else -1,
+            )
             if max_dev_rate > 0 and dev_rate is not None and dev_rate > max_dev_rate:
                 logger.info(
                     "dev保有率が高すぎるため追跡スキップ: %s (%.1f%% > %.1f%%)",

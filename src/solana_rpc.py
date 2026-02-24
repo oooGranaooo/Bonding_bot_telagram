@@ -19,11 +19,15 @@ async def _rpc(
             SOLANA_RPC_URL, json=payload, timeout=aiohttp.ClientTimeout(total=10)
         ) as resp:
             if resp.status != 200:
-                logger.debug("Solana RPC %s HTTP %d", method, resp.status)
+                logger.warning("Solana RPC %s HTTP %d", method, resp.status)
                 return None
-            return await resp.json()
+            data = await resp.json()
+            if "error" in data:
+                logger.warning("Solana RPC %s エラー: %s", method, data["error"])
+                return None
+            return data
     except Exception as e:
-        logger.debug("Solana RPC %s エラー: %s", method, e)
+        logger.warning("Solana RPC %s 例外: %s", method, e)
         return None
 
 
