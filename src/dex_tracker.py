@@ -107,6 +107,21 @@ class DexTracker:
             self._queue.task_done()
 
     async def _start_track(self, token: GraduatedToken) -> None:
+        min_age_minutes: float = self._config.get("filter", "min_age_minutes", 0)
+        if min_age_minutes > 0:
+            async with aiohttp.ClientSession() as session:
+                price_data = await self._fetch_price(session, token.address)
+            if price_data is not None:
+                _, _, _, pair_created_at = price_data
+                if pair_created_at is not None:
+                    elapsed_minutes = (datetime.utcnow() - pair_created_at).total_seconds() / 60
+                    if elapsed_minutes < min_age_minutes:
+                        logger.info(
+                            "ローンチから%.1f分未満のため追跡スキップ: %s (%.1f分)",
+                            min_age_minutes, token.symbol, elapsed_minutes,
+                        )
+                        return
+
         if self._on_start:
             await self._on_start(token)
         await self._track(token)
@@ -148,21 +163,6 @@ class DexTracker:
                             token.symbol, mcap, exit_mcap,
                         )
                         break
-
-                    # 初回フェッチ: DexScreener の pairCreatedAt でローンチ経過時間チェック
-                    min_age_minutes: float = cfg_filter.get("min_age_minutes", 0)
-                    if (
-                        token.initial_price is None
-                        and min_age_minutes > 0
-                        and pair_created_at is not None
-                    ):
-                        elapsed_minutes = (datetime.utcnow() - pair_created_at).total_seconds() / 60
-                        if elapsed_minutes < min_age_minutes:
-                            logger.info(
-                                "ローンチから%.1f分未満のためトラッキング終了: %s (%.1f分)",
-                                min_age_minutes, token.symbol, elapsed_minutes,
-                            )
-                            break
 
                     # フィルター
                     if liquidity < min_liquidity:
