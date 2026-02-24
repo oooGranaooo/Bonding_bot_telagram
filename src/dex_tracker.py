@@ -97,16 +97,44 @@ class DexTracker:
                 )
                 self._queue.task_done()
                 continue
-            if self._on_start:
-                asyncio.create_task(self._on_start(token))
             task = asyncio.create_task(
-                self._track(token), name=f"track-{token.address[:8]}"
+                self._check_and_track(token), name=f"track-{token.address[:8]}"
             )
             self._active_tasks[token.address] = task
             task.add_done_callback(
                 lambda t, addr=token.address: self._active_tasks.pop(addr, None)
             )
             self._queue.task_done()
+
+    async def _check_and_track(self, token: GraduatedToken) -> None:
+        """ホルダーフィルターチェック → 通過後に通知 & 追跡開始。"""
+        cfg_filter = self._config.data["filter"]
+        max_dev_rate: float = cfg_filter.get("max_dev_holding_rate", 0)
+        max_top_rate: float = cfg_filter.get("max_top_holding_rate", 0)
+        top_n: int = cfg_filter.get("top_holder_count", 10)
+
+        if max_dev_rate > 0 or max_top_rate > 0:
+            async with aiohttp.ClientSession() as check_session:
+                dev_rate, top_rate = await get_holder_rates(
+                    check_session, token.address, token.dev_wallet, top_n
+                )
+            if max_dev_rate > 0 and dev_rate is not None and dev_rate > max_dev_rate:
+                logger.info(
+                    "dev保有率が高すぎるため追跡スキップ: %s (%.1f%% > %.1f%%)",
+                    token.symbol, dev_rate * 100, max_dev_rate * 100,
+                )
+                return
+            if max_top_rate > 0 and top_rate is not None and top_rate > max_top_rate:
+                logger.info(
+                    "上位%dホルダー集中率が高すぎるため追跡スキップ: %s (%.1f%% > %.1f%%)",
+                    top_n, token.symbol, top_rate * 100, max_top_rate * 100,
+                )
+                return
+
+        # フィルター通過 → 追跡開始通知 → 追跡
+        if self._on_start:
+            await self._on_start(token)
+        await self._track(token)
 
     async def _track(self, token: GraduatedToken) -> None:
         cfg_tracking = self._config.data["tracking"]
@@ -116,28 +144,6 @@ class DexTracker:
         logger.info("追跡開始: %s (%s)", token.symbol, token.address)
 
         async with aiohttp.ClientSession() as session:
-            # ホルダーフィルターチェック（1回だけ）
-            cfg_filter = self._config.data["filter"]
-            max_dev_rate: float = cfg_filter.get("max_dev_holding_rate", 0)
-            max_top_rate: float = cfg_filter.get("max_top_holding_rate", 0)
-            top_n: int = cfg_filter.get("top_holder_count", 10)
-
-            if max_dev_rate > 0 or max_top_rate > 0:
-                dev_rate, top_rate = await get_holder_rates(
-                    session, token.address, token.dev_wallet, top_n
-                )
-                if max_dev_rate > 0 and dev_rate is not None and dev_rate > max_dev_rate:
-                    logger.info(
-                        "dev保有率が高すぎるため追跡終了: %s (%.1f%% > %.1f%%)",
-                        token.symbol, dev_rate * 100, max_dev_rate * 100,
-                    )
-                    return
-                if max_top_rate > 0 and top_rate is not None and top_rate > max_top_rate:
-                    logger.info(
-                        "上位%dホルダー集中率が高すぎるため追跡終了: %s (%.1f%% > %.1f%%)",
-                        top_n, token.symbol, top_rate * 100, max_top_rate * 100,
-                    )
-                    return
             while datetime.utcnow() < deadline:
                 # ループごとに最新の設定を読み込む（/set で即時反映）
                 cfg_dip = self._config.data["dip"]
