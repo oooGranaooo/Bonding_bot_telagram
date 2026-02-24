@@ -59,7 +59,6 @@ class PumpMonitor:
         if not mint:
             logger.debug("mint なし: %s", data)
             return
-        logger.info("migrationイベント raw keys: %s", list(data.keys()))
 
         # ローンチから min_age_minutes 未満のトークンはスキップ
         min_age: float = self._config.get("filter", "min_age_minutes", 3)
@@ -78,14 +77,14 @@ class PumpMonitor:
 
         symbol = data.get("symbol", "UNKNOWN")
         name = data.get("name", symbol)
-        dev_wallet = data.get("traderPublicKey")
+        pool_address = data.get("pool")
 
         token = GraduatedToken(
             address=mint,
             symbol=symbol,
             name=name,
             graduation_time=datetime.utcnow(),
-            dev_wallet=dev_wallet,
+            pool_address=pool_address,
         )
         logger.info("卒業検知: %s (%s) — %s", symbol, name, mint)
         await self._queue.put(token)

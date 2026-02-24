@@ -9,7 +9,6 @@ import aiohttp
 
 from .config import Config
 from .models import GraduatedToken
-from .solana_rpc import get_holder_rates
 
 logger = logging.getLogger(__name__)
 
@@ -90,15 +89,16 @@ class DexTracker:
                 logger.info("既に追跡中: %s", token.address)
                 self._queue.task_done()
                 continue
-            if len(self._active_tasks) >= self._config.get("tracking", "max_tokens", 5):
+            max_tokens: int = self._config.get("tracking", "max_tokens", 5)
+            if len(self._active_tasks) >= max_tokens:
                 logger.info(
                     "追跡上限(%d)に達したためスキップ: %s",
-                    self._max_tracks, token.symbol,
+                    max_tokens, token.symbol,
                 )
                 self._queue.task_done()
                 continue
             task = asyncio.create_task(
-                self._check_and_track(token), name=f"track-{token.address[:8]}"
+                self._start_track(token), name=f"track-{token.address[:8]}"
             )
             self._active_tasks[token.address] = task
             task.add_done_callback(
@@ -106,40 +106,7 @@ class DexTracker:
             )
             self._queue.task_done()
 
-    async def _check_and_track(self, token: GraduatedToken) -> None:
-        """ホルダーフィルターチェック → 通過後に通知 & 追跡開始。"""
-        cfg_filter = self._config.data["filter"]
-        max_dev_rate: float = cfg_filter.get("max_dev_holding_rate", 0)
-        max_top_rate: float = cfg_filter.get("max_top_holding_rate", 0)
-        top_n: int = cfg_filter.get("top_holder_count", 10)
-
-        if max_dev_rate > 0 or max_top_rate > 0:
-            async with aiohttp.ClientSession() as check_session:
-                dev_rate, top_rate = await get_holder_rates(
-                    check_session, token.address, token.dev_wallet, top_n
-                )
-            logger.info(
-                "ホルダーチェック: %s | dev_wallet=%s | dev=%.1f%% | top%d=%.1f%%",
-                token.symbol,
-                token.dev_wallet or "N/A",
-                (dev_rate * 100) if dev_rate is not None else -1,
-                top_n,
-                (top_rate * 100) if top_rate is not None else -1,
-            )
-            if max_dev_rate > 0 and dev_rate is not None and dev_rate > max_dev_rate:
-                logger.info(
-                    "dev保有率が高すぎるため追跡スキップ: %s (%.1f%% > %.1f%%)",
-                    token.symbol, dev_rate * 100, max_dev_rate * 100,
-                )
-                return
-            if max_top_rate > 0 and top_rate is not None and top_rate > max_top_rate:
-                logger.info(
-                    "上位%dホルダー集中率が高すぎるため追跡スキップ: %s (%.1f%% > %.1f%%)",
-                    top_n, token.symbol, top_rate * 100, max_top_rate * 100,
-                )
-                return
-
-        # フィルター通過 → 追跡開始通知 → 追跡
+    async def _start_track(self, token: GraduatedToken) -> None:
         if self._on_start:
             await self._on_start(token)
         await self._track(token)
