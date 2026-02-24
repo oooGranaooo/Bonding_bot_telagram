@@ -300,26 +300,39 @@ class Notifier:
                         subcommand = parts[0].lower() if parts else ""
 
                         if subcommand == "add":
-                            if len(parts) != 5:
+                            # parts: [add, min, max, x秒, (y秒), rate%]
+                            if len(parts) not in (5, 6):
                                 reply = (
-                                    "⚠️ 使い方: <code>/volatier add &lt;min&gt; &lt;max&gt; &lt;秒&gt; &lt;変動率%&gt;</code>\n"
-                                    "例: <code>/volatier add 10000 50000 5 10</code>\n"
+                                    "⚠️ 使い方:\n"
+                                    "  <code>/volatier add &lt;min&gt; &lt;max&gt; &lt;x秒&gt; &lt;変動率%&gt;</code>\n"
+                                    "  <code>/volatier add &lt;min&gt; &lt;max&gt; &lt;x秒&gt; &lt;y秒&gt; &lt;変動率%&gt;</code>\n"
+                                    "x秒前〜y秒前の平均と現在価格を比較 (y省略=0=現在)\n"
+                                    "例: <code>/volatier add 10000 50000 4 5</code>\n"
+                                    "例: <code>/volatier add 10000 50000 10 4 5</code>\n"
                                     "  max に <code>inf</code> を指定すると上限なし"
                                 )
                             else:
                                 try:
                                     mcap_min = float(parts[1])
                                     mcap_max = float("inf") if parts[2].lower() in ("inf", "∞") else float(parts[2])
-                                    window_sec = int(parts[3])
-                                    min_rate = float(parts[4]) / 100
+                                    if len(parts) == 6:
+                                        window_sec = float(parts[3])
+                                        window_end_sec = float(parts[4])
+                                        min_rate = float(parts[5]) / 100
+                                    else:
+                                        window_sec = float(parts[3])
+                                        window_end_sec = 0
+                                        min_rate = float(parts[4]) / 100
                                     if mcap_min < 0 or (mcap_max != float("inf") and mcap_max <= mcap_min):
                                         reply = "⚠️ min < max になるように指定してください"
                                     elif window_sec <= 0 or min_rate <= 0:
                                         reply = "⚠️ 秒・変動率は正の値を指定してください"
+                                    elif window_end_sec < 0 or window_end_sec >= window_sec:
+                                        reply = "⚠️ y秒は 0 以上かつ x秒 未満を指定してください"
                                     else:
-                                        ok, reply = self._config.add_mcap_tier(mcap_min, mcap_max, window_sec, min_rate)
+                                        ok, reply = self._config.add_mcap_tier(mcap_min, mcap_max, window_sec, min_rate, window_end_sec)
                                         if ok:
-                                            logger.info("ティア追加: $%.0f〜 %.0f%% / %d秒", mcap_min, min_rate * 100, window_sec)
+                                            logger.info("ティア追加: $%.0f〜 %.0f%% / %.0f〜%.0f秒", mcap_min, min_rate * 100, window_sec, window_end_sec)
                                 except ValueError:
                                     reply = "⚠️ 数値の形式が正しくありません"
 

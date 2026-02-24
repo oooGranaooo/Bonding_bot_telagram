@@ -85,7 +85,8 @@ class Config:
         return None
 
     def add_mcap_tier(
-        self, mcap_min: float, mcap_max: float, window_sec: int, min_rate: float
+        self, mcap_min: float, mcap_max: float, window_sec: float, min_rate: float,
+        window_end_sec: float = 0,
     ) -> tuple[bool, str]:
         """ティアを追加して mcap_min 昇順にソートして保存する。"""
         dip = self._data.setdefault("dip", {})
@@ -95,16 +96,18 @@ class Config:
                 "mcap_min": mcap_min,
                 "mcap_max": mcap_max,
                 "price_change_window_seconds": window_sec,
+                "price_change_window_end_seconds": window_end_sec,
                 "price_change_min_rate": min_rate,
             }
         )
         tiers.sort(key=lambda t: t.get("mcap_min", 0))
         self._save()
         max_str = "∞" if mcap_max == float("inf") else f"${mcap_max:,.0f}"
+        window_str = f"{window_sec}〜{window_end_sec}秒前" if window_end_sec > 0 else f"{window_sec}秒"
         return True, (
             f"✅ ティア追加\n"
             f"  時価総額: ${mcap_min:,.0f} 〜 {max_str}\n"
-            f"  変動率ウィンドウ: {window_sec}秒\n"
+            f"  変動率ウィンドウ: {window_str}\n"
             f"  最低変動率: {min_rate * 100:.1f}%"
         )
 
@@ -126,22 +129,25 @@ class Config:
                 "📊 <b>時価総額別変動率ティア</b>\n"
                 "\n"
                 "未設定です。\n"
-                "追加: <code>/volatier add &lt;min&gt; &lt;max&gt; &lt;秒&gt; &lt;変動率%&gt;</code>\n"
-                "例: <code>/volatier add 10000 50000 5 10</code>"
+                "追加: <code>/volatier add &lt;min&gt; &lt;max&gt; &lt;x秒&gt; [y秒] &lt;変動率%&gt;</code>\n"
+                "例: <code>/volatier add 10000 50000 10 4 5</code>"
             )
         lines = ["📊 <b>時価総額別変動率ティア</b>\n"]
         for i, tier in enumerate(tiers, 1):
             mcap_min = tier.get("mcap_min", 0)
             mcap_max = tier.get("mcap_max", float("inf"))
             window = tier.get("price_change_window_seconds", 0)
+            window_end = tier.get("price_change_window_end_seconds", 0)
             rate = tier.get("price_change_min_rate", 0)
             max_str = "∞" if mcap_max == float("inf") else f"${mcap_max:,.0f}"
+            window_str = f"{window}〜{window_end}秒前" if window_end > 0 else f"{window}秒"
             lines.append(
                 f"  {i}. ${mcap_min:,.0f}〜{max_str}"
-                f" | {window}秒 | {rate * 100:.1f}%以上"
+                f" | {window_str} | {rate * 100:.1f}%以上"
             )
-        lines.append("\n追加: <code>/volatier add &lt;min&gt; &lt;max&gt; &lt;秒&gt; &lt;変動率%&gt;</code>")
-        lines.append("例: <code>/volatier add 10000 50000 5 10</code>")
+        lines.append("\n追加: <code>/volatier add &lt;min&gt; &lt;max&gt; &lt;x秒&gt; [y秒] &lt;変動率%&gt;</code>")
+        lines.append("例(y省略): <code>/volatier add 10000 50000 4 5</code>")
+        lines.append("例(y指定): <code>/volatier add 10000 50000 10 4 5</code>")
         lines.append("削除: <code>/volatier del &lt;番号&gt;</code>")
         return "\n".join(lines)
 
